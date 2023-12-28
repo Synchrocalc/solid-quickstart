@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synchronized swimming </title>
+  <style>
+    form {
+      margin-bottom: 20px;
+    }
+
+    #logout {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      cursor: pointer;
+      color: blue;
+      text-decoration: underline;
+    }
+  </style>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+</head>
+
+<body>
+  <h1>CSPS synchrocalc</h1>
+
+  <!-- Formuláø pro identifikaci uživatele -->
+  <form id="loginForm">
+    <label for="username">Login name:</label>
+    <input type="text" id="username" required>
+
+    <label for="password">Password:</label>
+    <input type="password" id="password" required>
+
+    <button type="button" onclick="login()">Sign up</button>
+  </form>
+
+  <!-- Ostatní formuláøe a skripty ... -->
+
+  <!-- JavaScript knihovna pro zpracování Excel souborù -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 1 -->
+  <form id="judge1Form" style="display: none;">
+    <label for="runnerNumber1">Competitor number:</label>
+    <input type="text" id="runnerNumber1" required>
+
+    <label for="points1">Points from the referee 1:</label>
+    <input type="number" id="points1" step="0.0001" required>
+    <button type="button" onclick="submitScore('1')">Send</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 2 -->
+  <form id="judge2Form" style="display: none;">
+    <label for="runnerNumber2">Competitor number:</label>
+    <input type="text" id="runnerNumber2" required>
+
+    <label for="points2">Points from the referee 2:</label>
+    <input type="number" id="points2" step="0.0001" required>
+    <button type="button" onclick="submitScore('2')">Send</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 3 -->
+  <form id="judge3Form" style="display: none;">
+    <label for="runnerNumber3">Competitor number:</label>
+    <input type="text" id="runnerNumber3" required>
+
+    <label for="points3">Points from the referee 3:</label>
+    <input type="number" id="points3" step="0.0001" required>
+    <button type="button" onclick="submitScore('3')">Send</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - admin -->
+  <form id="adminForm" style="display: none;">
+    <label for="runnerNumberAdmin">Competitor number:</label>
+    <input type="text" id="runnerNumberAdmin" required>
+
+    <label for="pointsAdmin">Points from the administrator:</label>
+    <input type="number" id="pointsAdmin" step="0.0001" required>
+    <button type="button" onclick="submitScore('Admin')">Send</button>
+
+    <!-- Nové tlaèítko pro vynulování všech bodù -->
+    <button type="button" onclick="resetAllScores()">Reset all points</button>
+
+    <!-- Nový input pro nahrávání Excel souboru -->
+    <button type="button" onclick="document.getElementById('fileInput').click()">Browse</button>
+    
+    <input type="file" id="fileInput" accept=".xls, .xlsx" onchange="handleFile(event)">
+  </form>
+
+  <!-- Formuláø pro zmìnu hesla rozhodèím - admin -->
+  <form id="changePasswordForm" style="display: none;">
+    <label for="judgeNumberToChange">Referee number:</label>
+    <input type="text" id="judgeNumberToChange" required>
+
+    <label for="newPassword">New password:</label>
+    <input type="password" id="newPassword" required>
+
+    <button type="button" onclick="changePassword()">Change Password</button>
+  </form>
+
+  <!-- Odkaz pro odhlášení -->
+  <div id="logout" style="display: none;" onclick="logout()">Log out</div>
+
+  <!-- JavaScript knihovna pro zpracování Excel souborù -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+
+  <!-- Tabulka výsledkù -->
+  <h2>Table of results</h2>
+  <table id="scoreTable" border="1" style="display: none;">
+    <tr>
+      <th>Competitor number</th>
+      <th>Points from the referee 1</th>
+      <th>Points from the referee 2</th>
+      <th>Points from the referee 3</th>
+      <th>Total score</th>
+    </tr>
+  </table>
+
+
+  <script>
+    let authenticatedUser = null;
+
+    function login() {
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+
+      const username = usernameInput.value;
+      const password = passwordInput.value;
+
+      if (verifyCredentials(username, password)) {
+        authenticatedUser = username;
+        usernameInput.value = '';
+        passwordInput.value = '';
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('scoreTable').style.display = 'block';
+        document.getElementById('logout').style.display = 'block';
+
+        if (username.startsWith('judge')) {
+          const judgeNumber = username.slice(5);
+          document.getElementById(`judge${judgeNumber}Form`).style.display = 'block';
+        }
+
+        if (username === 'admin') {
+          document.getElementById('adminForm').style.display = 'block';
+          document.getElementById('changePasswordForm').style.display = 'block';
+        }
+      } else {
+        alert('Neplatné uživatelské jméno nebo heslo.');
+      }
+    }
+
+    function verifyCredentials(username, password) {
+      if (username === 'admin' && password === 'adminheslo') {
+        return true;
+      }
+
+      const judgeNumber = parseInt(username.slice(5));
+      if (!isNaN(judgeNumber) && password === 'heslo' + judgeNumber) {
+        return true;
+      }
+
+      return false;
+    }
+
+    function submitScore(judgeNumber) {
+      const runnerNumber = document.getElementById(`runnerNumber${judgeNumber}`).value;
+      const points = parseFloat(document.getElementById(`points${judgeNumber}`).value);
+
+      updateTable(runnerNumber, points, judgeNumber);
+
+      document.getElementById(`runnerNumber${judgeNumber}`).value = getNextRunnerNumber();
+      document.getElementById(`points${judgeNumber}`).value = '';
+    }
+
+    function updateTable(runnerNumber, points, judgeNumber) {
+      const table = document.getElementById('scoreTable');
+      let row = table.querySelector(`tr[data-runner="${runnerNumber}"]`);
+
+      if (!row) {
+        row = table.insertRow(-1);
+        row.setAttribute('data-runner', runnerNumber);
+        const cell1 = row.insertCell(0);
+        const cell2 = row.insertCell(1);
+        const cell3 = row.insertCell(2);
+        const cell4 = row.insertCell(3);
+        const cell5 = row.insertCell(4);
+        cell1.innerHTML = runnerNumber;
+        cell2.innerHTML = 0;
+        cell3.innerHTML = 0;
+        cell4.innerHTML = 0;
+        cell5.innerHTML = 0;
+      }
+
+      switch (judgeNumber) {
+        case 'Admin':
+          row.cells[1].innerHTML = points.toFixed(4);
+          row.cells[2].innerHTML = points.toFixed(4);
+          row.cells[3].innerHTML = points.toFixed(4);
+          break;
+        default:
+          row.cells[judgeNumber].innerHTML = points.toFixed(4);
+          break;
+      }
+
+      const totalPoints = parseFloat(row.cells[1].innerHTML) + parseFloat(row.cells[2].innerHTML) + parseFloat(row.cells[3].innerHTML);
+      row.cells[4].innerHTML = totalPoints.toFixed(4);
+    }
+
+    function getNextRunnerNumber() {
+      const table = document.getElementById('scoreTable');
+      const rows = table.getElementsByTagName('tr');
+      const lastRunnerNumber = rows.length > 1 ? parseInt(rows[rows.length - 1].cells[0].innerHTML) : 0;
+
+      return lastRunnerNumber + 1;
+    }
+
+    function resetAllScores() {
+      const table = document.getElementById('scoreTable');
+      const rows = table.getElementsByTagName('tr');
+
+      for (let i = 1; i < rows.length; i++) {
+        const cells = rows[i].getElementsByTagName('td');
+
+        for (let j = 1; j < cells.length - 1; j++) {
+          cells[j].innerHTML = 0;
+        }
+
+        cells[cells.length - 1].innerHTML = 0;
+      }
+    }
+
+    function logout() {
+      authenticatedUser = null;
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('scoreTable').style.display = 'none';
+      document.getElementById('logout').style.display = 'none';
+
+      for (let i = 1; i <= 3; i++) {
+        document.getElementById(`judge${i}Form`).style.display = 'none';
+      }
+      document.getElementById('adminForm').style.display = 'none';
+      document.getElementById('changePasswordForm').style.display = 'none';
+    }
+
+    function changePassword() {
+      const judgeNumberToChange = document.getElementById('judgeNumberToChange').value;
+      const newPassword = document.getElementById('newPassword').value;
+
+      if (changeJudgePassword(judgeNumberToChange, newPassword)) {
+        alert(`Heslo rozhodèího ${judgeNumberToChange} bylo zmìnìno.`);
+      } else {
+        alert(`Rozhodèí s èíslem ${judgeNumberToChange} neexistuje.`);
+      }
+
+      document.getElementById('judgeNumberToChange').value = '';
+      document.getElementById('newPassword').value = '';
+    }
+
+    function changeJudgePassword(judgeNumber, newPassword) {
+      if (['1', '2', '3'].includes(judgeNumber)) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file || authenticatedUser !== 'admin') return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+
+        // Zde mùžeš zpracovat data z Excelu a aktualizovat tabulku.
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const excelData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        // Aktualizuj tabulku nebo proved další kroky podle potøeby.
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  </script>
+</body>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 1 -->
+  <form id="judge1Form" style="display: none;">
+    <label for="runnerNumber1">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumber1" required>
+
+    <label for="points1">Body od rozhodèího 1:</label>
+    <input type="number" id="points1" step="0.0001" required>
+    <button type="button" onclick="submitScore('1')">Odeslat</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 2 -->
+  <form id="judge2Form" style="display: none;">
+    <label for="runnerNumber2">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumber2" required>
+
+    <label for="points2">Body od rozhodèího 2:</label>
+    <input type="number" id="points2" step="0.0001" required>
+    <button type="button" onclick="submitScore('2')">Odeslat</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 3 -->
+  <form id="judge3Form" style="display: none;">
+    <label for="runnerNumber3">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumber3" required>
+
+    <label for="points3">Body od rozhodèího 3:</label>
+    <input type="number" id="points3" step="0.0001" required>
+    <button type="button" onclick="submitScore('3')">Odeslat</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - admin -->
+  <form id="adminForm" style="display: none;">
+    <label for="runnerNumberAdmin">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumberAdmin" required>
+
+    <label for="pointsAdmin">Body od administrátora:</label>
+    <input type="number" id="pointsAdmin" step="0.0001" required>
+    <button type="button" onclick="submitScore('Admin')">Odeslat</button>
+
+    <!-- Nové tlaèítko pro vynulování všech bodù -->
+    <button type="button" onclick="resetAllScores()">Vynulovat všechny body</button>
+
+    <!-- Nový input pro nahrávání Excel souboru -->
+    <button type="button" onclick="document.getElementById('fileInput').click()">Procházet</button>
+    
+    <input type="file" id="fileInput" accept=".xls, .xlsx" onchange="handleFile(event)">
+  </form>
+
+  <!-- Formuláø pro zmìnu hesla rozhodèím - admin -->
+  <form id="changePasswordForm" style="display: none;">
+    <label for="judgeNumberToChange">Èíslo rozhodèího:</label>
+    <input type="text" id="judgeNumberToChange" required>
+
+    <label for="newPassword">Nové heslo:</label>
+    <input type="password" id="newPassword" required>
+
+    <button type="button" onclick="changePassword()">Zmìnit heslo</button>
+  </form>
+
+  <!-- Odkaz pro odhlášení -->
+  <div id="logout" style="display: none;" onclick="logout()">Odhlásit</div>
+
+  <!-- JavaScript knihovna pro zpracování Excel souborù -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+
+  <script>
+    let authenticatedUser = null;
+
+    function login() {
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+
+      const username = usernameInput.value;
+      const password = passwordInput.value;
+
+      if (verifyCredentials(username, password)) {
+        authenticatedUser = username;
+        usernameInput.value = '';
+        passwordInput.value = '';
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('scoreTable').style.display = 'block';
+        document.getElementById('logout').style.display = 'block';
+
+        if (username.startsWith('judge')) {
+          const judgeNumber = username.slice(5);
+          document.getElementById(`judge${judgeNumber}Form`).style.display = 'block';
+        }
+
+        if (username === 'admin') {
+          document.getElementById('adminForm').style.display = 'block';
+          document.getElementById('changePasswordForm').style.display = 'block';
+        }
+      } else {
+        alert('Neplatné uživatelské jméno nebo heslo.');
+      }
+    }
+
+    function verifyCredentials(username, password) {
+      if (username === 'admin' && password === 'adminheslo') {
+        return true;
+      }
+
+      const judgeNumber = parseInt(username.slice(5));
+      if (!isNaN(judgeNumber) && password === 'heslo' + judgeNumber) {
+        return true;
+      }
+
+      return false;
+    }
+
+    function submitScore(judgeNumber) {
+      const runnerNumber = document.getElementById(`runnerNumber${judgeNumber}`).value;
+      const points = parseFloat(document.getElementById(`points${judgeNumber}`).value);
+
+      updateTable(runnerNumber, points, judgeNumber);
+
+      document.getElementById(`runnerNumber${judgeNumber}`).value = getNextRunnerNumber();
+      document.getElementById(`points${judgeNumber}`).value = '';
+    }
+
+    function updateTable(runnerNumber, points, judgeNumber) {
+      const table = document.getElementById('scoreTable');
+      let row = table.querySelector(`tr[data-runner="${runnerNumber}"]`);
+
+      if (!row) {
+        row = table.insertRow(-1);
+        row.setAttribute('data-runner', runnerNumber);
+        const cell1 = row.insertCell(0);
+        const cell2 = row.insertCell(1);
+        const cell3 = row.insertCell(2);
+        const cell4 = row.insertCell(3);
+        const cell5 = row.insertCell(4);
+        cell1.innerHTML = runnerNumber;
+        cell2.innerHTML = 0;
+        cell3.innerHTML = 0;
+        cell4.innerHTML = 0;
+        cell5.innerHTML = 0;
+      }
+
+      switch (judgeNumber) {
+        case 'Admin':
+          row.cells[1].innerHTML = points.toFixed(4);
+          row.cells[2].innerHTML = points.toFixed(4);
+          row.cells[3].innerHTML = points.toFixed(4);
+          break;
+        default:
+          row.cells[judgeNumber].innerHTML = points.toFixed(4);
+          break;
+      }
+
+      const totalPoints = parseFloat(row.cells[1].innerHTML) + parseFloat(row.cells[2].innerHTML) + parseFloat(row.cells[3].innerHTML);
+      row.cells[4].innerHTML = totalPoints.toFixed(4);
+    }
+
+    function getNextRunnerNumber() {
+      const table = document.getElementById('scoreTable');
+      const rows = table.getElementsByTagName('tr');
+      const lastRunnerNumber = rows.length > 1 ? parseInt(rows[rows.length - 1].cells[0].innerHTML) : 0;
+
+      return lastRunnerNumber + 1;
+    }
+
+    function resetAllScores() {
+      const table = document.getElementById('scoreTable');
+      const rows = table.getElementsByTagName('tr');
+
+      for (let i = 1; i < rows.length; i++) {
+        const cells = rows[i].getElementsByTagName('td');
+
+        for (let j = 1; j < cells.length - 1; j++) {
+          cells[j].innerHTML = 0;
+        }
+
+        cells[cells.length - 1].innerHTML = 0;
+      }
+    }
+
+    function logout() {
+      authenticatedUser = null;
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('scoreTable').style.display = 'none';
+      document.getElementById('logout').style.display = 'none';
+
+      for (let i = 1; i <= 3; i++) {
+        document.getElementById(`judge${i}Form`).style.display = 'none';
+      }
+      document.getElementById('adminForm').style.display = 'none';
+      document.getElementById('changePasswordForm').style.display = 'none';
+    }
+
+    function changePassword() {
+      const judgeNumberToChange = document.getElementById('judgeNumberToChange').value;
+      const newPassword = document.getElementById('newPassword').value;
+
+      if (changeJudgePassword(judgeNumberToChange, newPassword)) {
+        alert(`Heslo rozhodèího ${judgeNumberToChange} bylo zmìnìno.`);
+      } else {
+        alert(`Rozhodèí s èíslem ${judgeNumberToChange} neexistuje.`);
+      }
+
+      document.getElementById('judgeNumberToChange').value = '';
+      document.getElementById('newPassword').value = '';
+    }
+
+    function changeJudgePassword(judgeNumber, newPassword) {
+      if (['1', '2', '3'].includes(judgeNumber)) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file || authenticatedUser !== 'admin') return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+
+        // Zde mùžeš zpracovat data z Excelu a aktualizovat tabulku.
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const excelData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        // Aktualizuj tabulku nebo proved další kroky podle potøeby.
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  </script>
+</body>
+
+
+
+    </tr>
+  </table>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 1 -->
+  <form id="judge1Form" style="display: none;">
+    <label for="runnerNumber1">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumber1" required>
+
+    <label for="points1">Body od rozhodèího 1:</label>
+    <input type="number" id="points1" step="0.0001" required>
+    <button type="button" onclick="submitScore('1')">Odeslat</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 2 -->
+  <form id="judge2Form" style="display: none;">
+    <label for="runnerNumber2">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumber2" required>
+
+    <label for="points2">Body od rozhodèího 2:</label>
+    <input type="number" id="points2" step="0.0001" required>
+    <button type="button" onclick="submitScore('2')">Odeslat</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - rozhodèí 3 -->
+  <form id="judge3Form" style="display: none;">
+    <label for="runnerNumber3">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumber3" required>
+
+    <label for="points3">Body od rozhodèího 3:</label>
+    <input type="number" id="points3" step="0.0001" required>
+    <button type="button" onclick="submitScore('3')">Odeslat</button>
+  </form>
+
+  <!-- Formuláø pro zadávání bodù - admin -->
+  <form id="adminForm" style="display: none;">
+    <label for="runnerNumberAdmin">Èíslo závodníka:</label>
+    <input type="text" id="runnerNumberAdmin" required>
+
+    <label for="pointsAdmin">Body od administrátora:</label>
+    <input type="number" id="pointsAdmin" step="0.0001" required>
+    <button type="button" onclick="submitScore('Admin')">Odeslat</button>
+
+    <!-- Nové tlaèítko pro vynulování všech bodù -->
+    <button type="button" onclick="resetAllScores()">Vynulovat všechny body</button>
+
+    <!-- Nový input pro nahrávání Excel souboru -->
+    <button type="button" onclick="document.getElementById('fileInput').click()">Procházet</button>
+
+    <input type="file" id="fileInput" accept=".xls, .xlsx" onchange="handleFile(event)">
+  </form>
+
+  <!-- Formuláø pro zmìnu hesla rozhodèím - admin -->
+  <form id="changePasswordForm" style="display: none;">
+    <label for="judgeNumberToChange">Èíslo rozhodèího:</label>
+    <input type="text" id="judgeNumberToChange" required>
+
+    <label for="newPassword">Nové heslo:</label>
+    <input type="password" id="newPassword" required>
+
+    <button type="button" onclick="changePassword()">Zmìnit heslo</button>
+  </form>
+
+  <!-- Odkaz pro odhlášení -->
+  <div id="logout" style="display: none;" onclick="logout()">Odhlásit</div>
+
+  <!-- JavaScript knihovna pro zpracování Excel souborù -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+
+  <script>
+    let authenticatedUser = null;
+
+    function login() {
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+
+      const username = usernameInput.value;
+      const password = passwordInput.value;
+
+      if (verifyCredentials(username, password)) {
+        authenticatedUser = username;
+        usernameInput.value = '';
+        passwordInput.value = '';
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('scoreTable').style.display = 'block';
+        document.getElementById('logout').style.display = 'block';
+
+        if (username.startsWith('judge')) {
+          const judgeNumber = username.slice(5);
+          document.getElementById(`judge${judgeNumber}Form`).style.display = 'block';
+        }
+
+        if (username === 'admin') {
+          document.getElementById('adminForm').style.display = 'block';
+          document.getElementById('changePasswordForm').style.display = 'block';
+        }
+      } else {
+        alert('Neplatné uživatelské jméno nebo heslo.');
+      }
+    }
+
+    function verifyCredentials(username, password) {
+      if (username === 'admin' && password === 'adminheslo') {
+        return true;
+      }
+
+      const judgeNumber = parseInt(username.slice(5));
+      if (!isNaN(judgeNumber) && password === 'heslo' + judgeNumber) {
+        return true;
+      }
+
+      return false;
+    }
+
+    function submitScore(judgeNumber) {
+      const runnerNumber = document.getElementById(`runnerNumber${judgeNumber}`).value;
+      const points = parseFloat(document.getElementById(`points${judgeNumber}`).value);
+
+      updateTable(runnerNumber, points, judgeNumber);
+
+      document.getElementById(`runnerNumber${judgeNumber}`).value = getNextRunnerNumber();
+      document.getElementById(`points${judgeNumber}`).value = '';
+    }
+
+    function updateTable(runnerNumber, points, judgeNumber) {
+      const table = document.getElementById('scoreTable');
+      let row = table.querySelector(`tr[data-runner="${runnerNumber}"]`);
+
+      if (!row) {
+        row = table.insertRow(-1);
+        row.setAttribute('data-runner', runnerNumber);
+        const cell1 = row.insertCell(0);
+        const cell2 = row.insertCell(1);
+        const cell3 = row.insertCell(2);
+        const cell4 = row.insertCell(3);
+        const cell5 = row.insertCell(4);
+        cell1.innerHTML = runnerNumber;
+        cell2.innerHTML = 0;
+        cell3.innerHTML = 0;
+        cell4.innerHTML = 0;
+        cell5.innerHTML = 0;
+      }
+
+      switch (judgeNumber) {
+        case 'Admin':
+          row.cells[1].innerHTML = points.toFixed(4);
+          row.cells[2].innerHTML = points.toFixed(4);
+          row.cells[3].innerHTML = points.toFixed(4);
+          break;
+        default:
+          row.cells[judgeNumber].innerHTML = points.toFixed(4);
+          break;
+      }
+
+      const totalPoints = parseFloat(row.cells[1].innerHTML) + parseFloat(row.cells[2].innerHTML) + parseFloat(row.cells[3].innerHTML);
+      row.cells[4].innerHTML = totalPoints.toFixed(4);
+    }
+
+    function getNextRunnerNumber() {
+      const table = document.getElementById('scoreTable');
+      const rows = table.getElementsByTagName('tr');
+      const lastRunnerNumber = rows.length > 1 ? parseInt(rows[rows.length - 1].cells[0].innerHTML) : 0;
+
+      return lastRunnerNumber + 1;
+    }
+
+    function resetAllScores() {
+      const table = document.getElementById('scoreTable');
+      const rows = table.getElementsByTagName('tr');
+
+      for (let i = 1; i < rows.length; i++) {
+        const cells = rows[i].getElementsByTagName('td');
+
+        for (let j = 1; j < cells.length - 1; j++) {
+          cells[j].innerHTML = 0;
+        }
+
+        cells[cells.length - 1].innerHTML = 0;
+      }
+    }
+
+    function logout() {
+      authenticatedUser = null;
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('scoreTable').style.display = 'none';
+      document.getElementById('logout').style.display = 'none';
+
+      for (let i = 1; i <= 3; i++) {
+        document.getElementById(`judge${i}Form`).style.display = 'none';
+      }
+      document.getElementById('adminForm').style.display = 'none';
+      document.getElementById('changePasswordForm').style.display = 'none';
+    }
+
+    function changePassword() {
+      const judgeNumberToChange = document.getElementById('judgeNumberToChange').value;
+      const newPassword = document.getElementById('newPassword').value;
+
+      if (changeJudgePassword(judgeNumberToChange, newPassword)) {
+        alert(`Heslo rozhodèího ${judgeNumberToChange} bylo zmìnìno.`);
+      } else {
+        alert(`Rozhodèí s èíslem ${judgeNumberToChange} neexistuje.`);
+      }
+
+      document.getElementById('judgeNumberToChange').value = '';
+      document.getElementById('newPassword').value = '';
+    }
+
+    function changeJudgePassword(judgeNumber, newPassword) {
+      if (['1', '2', '3'].includes(judgeNumber)) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file || authenticatedUser !== 'admin') return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+
+        // Zde mùžeš zpracovat data z Excelu a aktualizovat tabulku.
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const excelData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        // Aktualizuj tabulku nebo proved další kroky podle potøeby.
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  </script>
+</body>
+
+</html>
